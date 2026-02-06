@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "backup-manager", "backup-manager\backup-manager.csproj", "{38B14BC6-4330-404E-82E2-00C1982BEF86}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "backup", "backup\backup.csproj", "{38B14BC6-4330-404E-82E2-00C1982BEF86}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
