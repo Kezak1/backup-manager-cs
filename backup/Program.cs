@@ -1,15 +1,15 @@
-﻿using System;
+﻿using System.Diagnostics;
 using System.Text;
 
 namespace backup;
 
 class Program
 {
-    static void Usage(bool incorrectInput, string msg)
+    static void Usage(bool incorrectInput = false, string msg = "")
     {
         if(incorrectInput)
         {
-            Console.Error.WriteLine($"Incorrect input: {msg}");
+            Console.Error.WriteLine($"ERROR: {msg}");
         }
         Console.Error.Write("""
         USAGE:
@@ -19,6 +19,7 @@ class Program
         - listing currect added backups: list
         - exiting the program: exit
         """);   
+        Console.Error.WriteLine();
     }
 
     private static void Flush(List<string> tokens, StringBuilder sb)
@@ -148,24 +149,55 @@ class Program
     static void Main()
     {
         Console.WriteLine("Welcome to the backup system!");
+        Usage();
         while(true)
         {
+            Console.Write("\nEnter command: ");
             string? line = Console.ReadLine();
-            if(line == null)
-            {
-                Usage(true, "Input is null");
-            }
-
             var tokens = Tokenize(line);
-            int i = 0;
-            foreach(var s in tokens)
-            {
-                i++;
-                Console.WriteLine($"{i}:{s}");
-            }
 
-            break;
+            if(tokens.Count == 0)
+            {
+                Usage(true, "Input is null or empty");
+            } 
+            else if(tokens.Count == 1)
+            {
+                if(tokens[0] == "exit")
+                {
+                    break;
+                } 
+                else if(tokens[0] == "list")
+                {
+                    Console.WriteLine("list");
+                } 
+                else
+                {
+                    Usage();
+                    continue;
+                }
+            } 
+            else if(tokens.Count >= 3)
+            {
+                var source = Path.GetFullPath(tokens[1]);
+                var targets = tokens[2..].Select(Path.GetFullPath);
+                if(tokens[0] == "add")
+                {
+                    Console.WriteLine("add");
+                } 
+                else if(tokens[0] == "end")
+                {
+                    Console.WriteLine("end");
+                } 
+                else if(tokens.Count == 3 && tokens[0] == "restore")
+                {
+                    Console.WriteLine("restore");
+                }
+                else
+                {
+                    Usage();
+                    continue;
+                }
+            }
         }
-        
     }
 }
