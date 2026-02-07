@@ -150,6 +150,9 @@ class Program
     {
         Console.WriteLine("Welcome to the backup system!");
         Usage();
+
+        var bm = new BackupManager();
+
         while(true)
         {
             Console.Write("\nEnter command: ");
@@ -168,7 +171,7 @@ class Program
                 } 
                 else if(tokens[0] == "list")
                 {
-                    Console.WriteLine("list");
+                    bm.List();
                 } 
                 else
                 {
@@ -182,11 +185,11 @@ class Program
                 var targets = tokens[2..].Select(Path.GetFullPath);
                 if(tokens[0] == "add")
                 {
-                    Console.WriteLine("add");
+                    bm.Add(source, targets);   
                 } 
                 else if(tokens[0] == "end")
                 {
-                    Console.WriteLine("end");
+                    bm.End(source, targets);
                 } 
                 else if(tokens.Count == 3 && tokens[0] == "restore")
                 {
