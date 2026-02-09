@@ -32,12 +32,12 @@ USAGE:
 >
 ```
 
-Now you can add a directory that you want to back up, e.g.:
+Now you can add a directory that you want to backup, e.g.:
 ```
 add <source> <target 1> <target 2> ... <target n>
 ```
 
-After adding `<source>` and creating the backup in `<target>`, everything that happens in the `<source>` directory will be *mirrored* to the `<target i>`.  
+After adding `<source>` and creating the backup in `<target i>`, everything that happens in the `<source>` directory will be *mirrored* to the `<target i>`.  
 
 **Supported operations:**
 - creating files / directories / symlinks in `<source>`
