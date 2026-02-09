@@ -15,8 +15,8 @@ public class BackupSession {
 
 public class BackupManager
 {
-    private Dictionary<string, BackupSession> sessions = new(StringComparer.Ordinal);
-    private object gate = new();
+    private Dictionary<string, BackupSession> Sessions = new(StringComparer.Ordinal);
+    private object Gate = new();
 
     public void Add(string source, IEnumerable<string> targets)
     {
@@ -24,12 +24,12 @@ public class BackupManager
 
         if (File.Exists(src))
         {
-            Console.Error.WriteLine($"Source '{src}' is a file; expected a directory.");
+            Console.Error.WriteLine($"source '{src}' is a file; expected a directory.");
             return;
         }
         if (!Directory.Exists(src))
         {
-            Console.Error.WriteLine($"Source directory '{src}' does not exist.");
+            Console.Error.WriteLine($"source directory '{src}' does not exist.");
             return;
         }
 
@@ -43,16 +43,78 @@ public class BackupManager
         {
             if(PathEquals(t, src))
             {
-                Console.Error.WriteLine("Target cannot be equal to source");
+                Console.Error.WriteLine("target cannot be equal to source");
                 return;
             }
             if(IsSubPathOf(t, src))
             {
-                Console.Error.WriteLine($"Target '{t}' cannot be inside source '{src}");
+                Console.Error.WriteLine($"target '{t}' cannot be inside source '{src}");
                 return;
             }
         }
 
+        List<string> candidates;
+
+        lock(Gate)
+        {
+            if (!Sessions.TryGetValue(src, out var session)) 
+            {
+                candidates = ts;
+            } 
+            else
+            {
+                candidates = ts.Where(t => !session.Workers.ContainsKey(t)).ToList();
+            }
+        }
+        
+        List<string> accepted = [];
+        foreach(var t in candidates)
+        {
+            if(!EnsureEmptyDirectory(t, out var err))
+            {
+                Console.Error.WriteLine(err);
+                continue;
+            }
+            accepted.Add(t);
+        }
+
+        if(accepted.Count == 0) return;
+        
+        List<(string, TargetWorker)> toStart = [];
+        lock(Gate)
+        {
+            if(!Sessions.TryGetValue(src, out var session))
+            {
+                session = new BackupSession(src);
+                Sessions.Add(src, session);
+            }
+
+            foreach(var t in accepted)
+            {
+                if(session.Workers.ContainsKey(t)) continue;
+                var w = new TargetWorker(src, t);
+                session.Workers.Add(t, w);
+                toStart.Add((t, w));
+            }
+        }
+
+        foreach(var (t, w) in toStart)
+        {
+            _ = Task.Run(async () =>
+            {
+                try { 
+                    await Sync.RunInitialSyncAsync(src, w, CancellationToken.None); 
+                }
+                catch (Exception e)
+                {
+                    Console.Error.WriteLine($"initial sync failed for target '{t}': {e.Message}");
+                    await w.DisposeAsync();
+                    RemoveTargetWorker(src, t);
+                }
+            });
+        }
+
+        /*
         List<string> newTargets = [];
         lock(gate)
         {
@@ -99,12 +161,14 @@ public class BackupManager
                 }
                 catch(Exception e)
                 {
-                    Console.Error.WriteLine($"Initial sync failed for target '{t}': {e.Message}");
+                    Console.Error.WriteLine($"initial sync failed for target '{t}': {e.Message}");
                     await w.DisposeAsync();
                     RemoveTargetWorker(src, t);
                 }
             });
+            
         }
+        */
     }
 
     public void End(string source, IEnumerable<string> targets)
@@ -133,11 +197,10 @@ public class BackupManager
             .ToList();
 
         List<TargetWorker> toStop = [];
-        bool removeSession = false;
 
-        lock(gate)
+        lock(Gate)
         {
-            if (!sessions.TryGetValue(src, out var session))
+            if (!Sessions.TryGetValue(src, out var session))
             {
                 Console.Error.WriteLine($"no active session for source '{src}'.");
                 return;
@@ -157,8 +220,8 @@ public class BackupManager
 
             if (session.Workers.Count == 0)
             {
-                sessions.Remove(src);
-                removeSession = true;
+                Sessions.Remove(src);
+                Console.WriteLine($"session for source '{src}' ended");
             }
         }
 
@@ -170,22 +233,17 @@ public class BackupManager
             } 
             catch(Exception e)
             {
-                Console.Error.WriteLine($"Failed to stop worker for target '{w.TargetRoot}': {e.Message}");    
+                Console.Error.WriteLine($"failed to stop worker for target '{w.TargetRoot}': {e.Message}");    
             }
-        }
-
-        if(removeSession)
-        {
-            Console.WriteLine($"Session for source '{src}' ended");
         }
     }
 
     public void List()
     {
         List<(string Source, List<string> Targets)> snapshot;
-        lock (gate)
+        lock (Gate)
         {
-            snapshot = sessions.Values
+            snapshot = Sessions.Values
                 .Select(s => (s.Source, s.Workers.Keys.OrderBy(t => t, StringComparer.Ordinal).ToList()))
                 .OrderBy(x => x.Source, StringComparer.Ordinal)
                 .ToList();
@@ -193,13 +251,13 @@ public class BackupManager
 
         if (snapshot.Count == 0)
         {
-            Console.WriteLine("No active backup sessions.");
+            Console.WriteLine("no active backup sessions");
             return;
         }
 
         foreach (var (source, targets) in snapshot)
         {
-            Console.WriteLine($"Source: {source}");
+            Console.WriteLine($"source: {source}");
             foreach (var t in targets)
                 Console.WriteLine($"  -> {t}");
         }
@@ -214,10 +272,10 @@ public class BackupManager
     {
         List<TargetWorker> all;
 
-        lock (gate)
+        lock (Gate)
         {
-            all = sessions.Values.SelectMany(s => s.Workers.Values).ToList();
-            sessions.Clear();
+            all = Sessions.Values.SelectMany(s => s.Workers.Values).ToList();
+            Sessions.Clear();
         }
 
         foreach(var w in all)
@@ -228,7 +286,7 @@ public class BackupManager
             }
             catch(Exception e)
             {
-                Console.Error.WriteLine($"Failed to stop watcher for target '{w.TargetRoot}: {e.Message}");
+                Console.Error.WriteLine($"failed to stop watcher for target '{w.TargetRoot}: {e.Message}");
             }
         }
     }
@@ -282,9 +340,9 @@ public class BackupManager
         string src = Normalize(source);
         string t = Normalize(target);
 
-        lock(gate)
+        lock(Gate)
         {
-            if(!sessions.TryGetValue(src, out var s)) {
+            if(!Sessions.TryGetValue(src, out var s)) {
                 return false;
             }
             if(!s.Workers.Remove(t, out var w)) {
@@ -292,7 +350,7 @@ public class BackupManager
             }
             _ = w.DisposeAsync();
             if(s.Workers.Count == 0) {
-                sessions.Remove(src);
+                Sessions.Remove(src);
             }
             return true;
         }

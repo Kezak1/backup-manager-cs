@@ -154,7 +154,7 @@ class Program
 
         while(true)
         {
-            Console.Write("\nEnter command: ");
+            Console.Write("> ");
             string? line = Console.ReadLine();
             var tokens = Tokenize(line);
 
@@ -201,6 +201,10 @@ class Program
                     Usage();
                     continue;
                 }
+            } 
+            else
+            {
+                Usage();
             }
         }
     }

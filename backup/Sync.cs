@@ -5,7 +5,6 @@ public static class Sync
     public static async Task RunInitialSyncAsync(string sourceRoot, TargetWorker worker, CancellationToken ct)
     {
         await DfsAsync(sourceRoot, sourceRoot, worker, ct);
-        Console.WriteLine($"Initial backup from '{sourceRoot}' to '{worker.TargetRoot}' is done!");
     }
 
     static async Task DfsAsync(string sourceRoot, string curPath, TargetWorker worker, CancellationToken ct)
