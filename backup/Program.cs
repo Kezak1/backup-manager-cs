@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Text;
+﻿using System.Text;
 
 namespace backup;
 
@@ -167,6 +166,7 @@ class Program
             {
                 if(tokens[0] == "exit")
                 {
+                    bm.StopAllAsync().GetAwaiter().GetResult();
                     break;
                 } 
                 else if(tokens[0] == "list")
@@ -183,6 +183,7 @@ class Program
             {
                 var source = Path.GetFullPath(tokens[1]);
                 var targets = tokens[2..].Select(Path.GetFullPath);
+                
                 if(tokens[0] == "add")
                 {
                     bm.Add(source, targets);   

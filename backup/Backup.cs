@@ -1,13 +1,15 @@
+using System.Data;
+
 namespace backup;
 
 public class BackupSession {
     public string Source { get; }
-    public HashSet<string> Targets { get; }
+    public Dictionary<string, TargetWorker> Workers { get; }
 
-    public BackupSession(string source, IEnumerable<string> targets)
+    public BackupSession(string source)
     {
         Source = source;
-        Targets = new(targets, StringComparer.Ordinal);
+        Workers = new(StringComparer.Ordinal);
     }
 }
 
@@ -34,6 +36,7 @@ public class BackupManager
         var ts = targets
             .Where(t => !string.IsNullOrWhiteSpace(t))
             .Select(Normalize)
+            .Distinct(StringComparer.Ordinal)
             .ToList();
         
         foreach(var t in ts)
@@ -48,29 +51,68 @@ public class BackupManager
                 Console.Error.WriteLine($"Target '{t}' cannot be inside source '{src}");
                 return;
             }
-            if(!EnsureEmptyDirectory(t, out var err))
-            {
-                Console.Error.WriteLine(err);
-                return;
-            }
         }
 
-        lock (gate) {
+        List<string> newTargets = [];
+        lock(gate)
+        {
             if(!sessions.TryGetValue(src, out var session))
             {
-                session = new BackupSession(src, ts);
+                session = new BackupSession(src);
                 sessions.Add(src, session);
-                return;
             }
 
             foreach(var t in ts)
             {
-                session.Targets.Add(t);
+                if(session.Workers.ContainsKey(t)) continue;
+                newTargets.Add(t);
             }
+        }
+
+        foreach (var t in newTargets)
+        {
+            if (!EnsureEmptyDirectory(t, out var err))
+            {
+                Console.Error.WriteLine(err);
+                continue;
+            }
+
+            TargetWorker w;
+
+            lock(gate)
+            {
+                if(!sessions.TryGetValue(src, out var session))
+                    return;
+
+                if(session.Workers.ContainsKey(t))
+                    continue;
+
+                w = new TargetWorker(src, t);
+                session.Workers.Add(t, w);
+            }
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await Sync.RunInitialSyncAsync(src, w, CancellationToken.None);
+                }
+                catch(Exception e)
+                {
+                    Console.Error.WriteLine($"Initial sync failed for target '{t}': {e.Message}");
+                    await w.DisposeAsync();
+                    RemoveTargetWorker(src, t);
+                }
+            });
         }
     }
 
     public void End(string source, IEnumerable<string> targets)
+    {
+        EndAsync(source, targets).GetAwaiter().GetResult();
+    }
+
+    private async Task EndAsync(string source, IEnumerable<string> targets)
     {
         string src = Normalize(source);
 
@@ -90,6 +132,9 @@ public class BackupManager
             .Select(Normalize)
             .ToList();
 
+        List<TargetWorker> toStop = [];
+        bool removeSession = false;
+
         lock(gate)
         {
             if (!sessions.TryGetValue(src, out var session))
@@ -100,16 +145,38 @@ public class BackupManager
 
             foreach (var t in ts)
             {
-                if (!session.Targets.Remove(t))
+                if (session.Workers.Remove(t, out var worker))
                 {
-                    Console.Error.WriteLine($"target '{t}' is not registered for source '{src}'");
+                    toStop.Add(worker);
+                } 
+                else
+                {
+                    Console.Error.WriteLine($"target '{t}' is not registered for source '{src}'");    
                 }
             }
 
-            if (session.Targets.Count == 0)
+            if (session.Workers.Count == 0)
             {
                 sessions.Remove(src);
-            }   
+                removeSession = true;
+            }
+        }
+
+        foreach(var w in toStop)
+        {
+            try
+            {
+                await w.DisposeAsync().ConfigureAwait(false);
+            } 
+            catch(Exception e)
+            {
+                Console.Error.WriteLine($"Failed to stop worker for target '{w.TargetRoot}': {e.Message}");    
+            }
+        }
+
+        if(removeSession)
+        {
+            Console.WriteLine($"Session for source '{src}' ended");
         }
     }
 
@@ -119,7 +186,7 @@ public class BackupManager
         lock (gate)
         {
             snapshot = sessions.Values
-                .Select(s => (s.Source, s.Targets.OrderBy(t => t, StringComparer.Ordinal).ToList()))
+                .Select(s => (s.Source, s.Workers.Keys.OrderBy(t => t, StringComparer.Ordinal).ToList()))
                 .OrderBy(x => x.Source, StringComparer.Ordinal)
                 .ToList();
         }
@@ -145,7 +212,25 @@ public class BackupManager
 
     public async Task StopAllAsync() 
     {
-        throw new NotImplementedException();
+        List<TargetWorker> all;
+
+        lock (gate)
+        {
+            all = sessions.Values.SelectMany(s => s.Workers.Values).ToList();
+            sessions.Clear();
+        }
+
+        foreach(var w in all)
+        {
+            try
+            {
+                await w.DisposeAsync().ConfigureAwait(false);
+            }
+            catch(Exception e)
+            {
+                Console.Error.WriteLine($"Failed to stop watcher for target '{w.TargetRoot}: {e.Message}");
+            }
+        }
     }
 
      private static string Normalize(string path)
@@ -190,5 +275,26 @@ public class BackupManager
         }
 
         return true;
+    }
+
+    private bool RemoveTargetWorker(string source, string target)
+    {
+        string src = Normalize(source);
+        string t = Normalize(target);
+
+        lock(gate)
+        {
+            if(!sessions.TryGetValue(src, out var s)) {
+                return false;
+            }
+            if(!s.Workers.Remove(t, out var w)) {
+                return false;
+            }
+            _ = w.DisposeAsync();
+            if(s.Workers.Count == 0) {
+                sessions.Remove(src);
+            }
+            return true;
+        }
     }
 }
