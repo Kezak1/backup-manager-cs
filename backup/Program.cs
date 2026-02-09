@@ -6,7 +6,7 @@ class Program
 {
     static void Usage(bool incorrectInput = false, string msg = "")
     {
-        if(incorrectInput)
+        if (incorrectInput)
         {
             Console.Error.WriteLine($"ERROR: {msg}");
         }
@@ -17,13 +17,13 @@ class Program
         - restore source from target: restore <source path> <target path>
         - listing currect added backups: list
         - exiting the program: exit
-        """);   
+        """);
         Console.Error.WriteLine();
     }
 
     private static void Flush(List<string> tokens, StringBuilder sb)
     {
-        if(sb.Length == 0)
+        if (sb.Length == 0)
         {
             return;
         }
@@ -34,81 +34,81 @@ class Program
     static List<string> Tokenize(string? line)
     {
         var tokens = new List<string>();
-        if(string.IsNullOrWhiteSpace(line))
+        if (string.IsNullOrWhiteSpace(line))
         {
             return tokens;
         }
 
         var sb = new StringBuilder();
-        
+
         int state = 0;
         bool atTokenBoundary = true;
 
-        for(int i = 0; i < line.Length; i++)
+        for (int i = 0; i < line.Length; i++)
         {
             char c = line[i];
 
-            if(state == 0)
+            if (state == 0)
             {
-                if(char.IsWhiteSpace(c))
+                if (char.IsWhiteSpace(c))
                 {
                     Flush(tokens, sb);
                     atTokenBoundary = true;
                     continue;
                 }
 
-                if(c == '#' && atTokenBoundary)
+                if (c == '#' && atTokenBoundary)
                 {
                     break;
                 }
 
                 atTokenBoundary = false;
 
-                if(c == '\'')
+                if (c == '\'')
                 {
                     state = 1;
                     continue;
                 }
-                if(c == '"')
+                if (c == '"')
                 {
                     state = 2;
                     continue;
                 }
-                if(c == '\\')
+                if (c == '\\')
                 {
-                    if(i + 1 < line.Length)
+                    if (i + 1 < line.Length)
                     {
                         sb.Append(line[i + 1]);
                         i++;
-                    } 
+                    }
                     else
                     {
-                        sb.Append('\\');    
+                        sb.Append('\\');
                     }
                     continue;
-                } 
+                }
                 sb.Append(c);
-            } 
-            else if(state == 1)
+            }
+            else if (state == 1)
             {
-                if(c == '\'')
+                if (c == '\'')
                 {
                     state = 0;
                     continue;
                 }
                 sb.Append(c);
-            } 
+            }
             else
             {
-                if(c == '"')
+                if (c == '"')
                 {
                     state = 0;
                     continue;
                 }
 
-                if(c == '\\')
+                if (c == '\\')
                 {
-                    if(i + 1 >= line.Length)
+                    if (i + 1 >= line.Length)
                     {
                         sb.Append('\\');
                         continue;
@@ -116,13 +116,13 @@ class Program
 
                     char next = line[i + 1];
 
-                    if(next == '\\' || next == '$' || next == '`' || next == '"')
+                    if (next == '\\' || next == '$' || next == '`' || next == '"')
                     {
                         sb.Append(next);
                         i++;
                         continue;
                     }
-                    if(next == '\n')
+                    if (next == '\n')
                     {
                         i++;
                         continue;
@@ -133,10 +133,11 @@ class Program
                 }
                 sb.Append(c);
             }
-        } 
+        }
 
-        if (state != 0) {
-            Usage(true, "Unclosed command line");
+        if (state != 0)
+        {
+            Usage(true, "unclosed command line");
             tokens.Clear();
             return tokens;
         }
@@ -152,59 +153,60 @@ class Program
 
         var bm = new BackupManager();
 
-        while(true)
+        while (true)
         {
             Console.Write("> ");
             string? line = Console.ReadLine();
             var tokens = Tokenize(line);
 
-            if(tokens.Count == 0)
+            if (tokens.Count == 0)
             {
-                Usage(true, "Input is null or empty");
-            } 
-            else if(tokens.Count == 1)
+                Usage(true, "invalid input");
+            }
+            else if (tokens.Count == 1)
             {
-                if(tokens[0] == "exit")
+                if (tokens[0] == "exit")
                 {
                     bm.StopAllAsync().GetAwaiter().GetResult();
                     break;
-                } 
-                else if(tokens[0] == "list")
+                }
+                else if (tokens[0] == "list")
                 {
                     bm.List();
-                } 
+                }
                 else
                 {
-                    Usage();
+                    Usage(true, "invalid input");
                     continue;
                 }
-            } 
-            else if(tokens.Count >= 3)
+            }
+            else if (tokens.Count >= 3)
             {
                 var source = Path.GetFullPath(tokens[1]);
                 var targets = tokens[2..].Select(Path.GetFullPath);
-                
-                if(tokens[0] == "add")
+
+                if (tokens[0] == "add")
                 {
-                    bm.Add(source, targets);   
-                } 
-                else if(tokens[0] == "end")
+                    bm.Add(source, targets);
+                }
+                else if (tokens[0] == "end")
                 {
                     bm.End(source, targets);
-                } 
-                else if(tokens.Count == 3 && tokens[0] == "restore")
+                }
+                else if (tokens.Count == 3 && tokens[0] == "restore")
                 {
-                    Console.WriteLine("restore");
+                    var target = Path.GetFullPath(tokens[2]);
+                    bm.Restore(source, target);
                 }
                 else
                 {
-                    Usage();
+                    Usage(true, "invalid input");
                     continue;
                 }
-            } 
+            }
             else
             {
-                Usage();
+                Usage(true, "invalid input");
             }
         }
     }
